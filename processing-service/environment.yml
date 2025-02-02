@@ -1,0 +1,9 @@
+name: processing-service
+channels:
+  - conda-forge
+dependencies:
+  - python=3.8
+  - influxdb-client
+  - pip
+  - pip:
+    - confluent_kafka

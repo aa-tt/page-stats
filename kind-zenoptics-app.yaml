@@ -1,0 +1,475 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zenoptics
+---
+# zookeeper and kafka deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: zookeeper
+  namespace: zenoptics
+spec:
+  ports:
+  - port: 2181
+    name: zookeeper
+  clusterIP: None
+  selector:
+    app: zookeeper
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: zookeeper
+  namespace: zenoptics
+spec:
+  serviceName: zookeeper
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zookeeper
+  template:
+    metadata:
+      labels:
+        app: zookeeper
+    spec:
+      containers:
+      - name: zookeeper
+        image: zookeeper:3.4.14
+        ports:
+        - containerPort: 2181
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  namespace: zenoptics
+spec:
+  selector:
+    app: kafka
+  ports:
+  - protocol: TCP
+    port: 9092
+    targetPort: 9092
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: kafka
+  namespace: zenoptics
+spec:
+  serviceName: kafka
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      containers:
+      - name: kafka
+        image: wurstmeister/kafka:latest
+        ports:
+        - containerPort: 9092
+        env:
+        - name: KAFKA_ADVERTISED_LISTENERS
+          value: PLAINTEXT://kafka-0.kafka.zenoptics.svc.cluster.local:9092,PLAINTEXT://kafka-1.kafka.zenoptics.svc.cluster.local:9092,PLAINTEXT://kafka-2.kafka.zenoptics.svc.cluster.local:9092
+        - name: KAFKA_ZOOKEEPER_CONNECT
+          value: zookeeper.zenoptics.svc.cluster.local:2181
+        - name: KAFKA_LISTENERS
+          value: PLAINTEXT://0.0.0.0:9092
+        - name: KAFKA_OPTS
+          value: "-Dzookeeper.connect=zookeeper.zenoptics.svc.cluster.local:2181"
+        - name: KAFKA_BROKER_ID_COMMAND
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        command:
+        - sh
+        - -c
+        - |
+          export KAFKA_BROKER_ID=$(echo ${HOSTNAME##*-})
+          echo "zookeeper.connect=zookeeper.zenoptics.svc.cluster.local:2181" >> /opt/kafka/config/server.properties
+          exec /bin/sh /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-kafka-topic
+  namespace: zenoptics
+spec:
+  template:
+    spec:
+      containers:
+      - name: kafka-client
+        image: confluentinc/cp-kafka
+        command: ["sh", "-c", "kafka-topics --create --topic page_view_events --bootstrap-server kafka.zenoptics.svc.cluster.local:9092 --replication-factor 1 --partitions 1"]
+      restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: verify-kafka-topic
+  namespace: zenoptics
+spec:
+  template:
+    spec:
+      containers:
+      - name: kafka-client
+        image: confluentinc/cp-kafka
+        command: ["sh", "-c", "kafka-topics --list --bootstrap-server kafka.zenoptics.svc.cluster.local:9092"]
+      restartPolicy: OnFailure
+---
+# InfluxDB Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: influxdb
+  namespace: zenoptics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: influxdb
+  template:
+    metadata:
+      labels:
+        app: influxdb
+    spec:
+      containers:
+      - name: influxdb
+        image: influxdb:latest
+        ports:
+        - containerPort: 8086
+        env:
+        - name: DOCKER_INFLUXDB_INIT_MODE
+          value: "setup"
+        - name: DOCKER_INFLUXDB_INIT_USERNAME
+          value: "your-username"
+        - name: DOCKER_INFLUXDB_INIT_PASSWORD
+          value: "your-password"
+        - name: DOCKER_INFLUXDB_INIT_ORG
+          value: "your-org"
+        - name: DOCKER_INFLUXDB_INIT_BUCKET
+          value: "page_view_bucket"
+        - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+          value: "your-influxdb-token"
+        - name: INFLUX_HOST
+          value: "http://influxdb.zenoptics.svc.cluster.local:8086"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: influxdb
+  namespace: zenoptics
+spec:
+  selector:
+    app: influxdb
+  ports:
+  - protocol: TCP
+    port: 8086
+    targetPort: 8086
+---
+# Postgres Deployment and Service for storing aggregated data
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+  namespace: zenoptics
+data:
+  init.sql: |
+    CREATE TABLE IF NOT EXISTS region_weekly (
+        pageName VARCHAR(255),
+        region VARCHAR(255),
+        timestamp TIMESTAMP,
+        visits INT
+    );
+
+    INSERT INTO region_weekly (pageName, region, timestamp, visits) VALUES
+    ('HomePage', 'us-west', '2023-01-01 00:00:00', 100),
+    ('HomePage', 'us-west', '2023-01-02 00:00:00', 150),
+    ('ContactPage', 'us-west', '2023-01-01 00:00:00', 50),
+    ('ContactPage', 'us-west', '2023-01-02 00:00:00', 75);
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: zenoptics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:latest
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_USER
+          value: "your-username"
+        - name: POSTGRES_PASSWORD
+          value: "your-password"
+        - name: POSTGRES_DB
+          value: "zenopticsdb"
+        volumeMounts:
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: init-script
+        configMap:
+          name: postgres-init-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: zenoptics
+spec:
+  selector:
+    app: postgres
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+---
+# Ingest-Service Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingest-service
+  namespace: zenoptics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ingest-service
+  template:
+    metadata:
+      labels:
+        app: ingest-service
+    spec:
+      containers:
+      - name: ingest-service
+        image: ianunay/ingest:v21
+        ports:
+        - containerPort: 8080
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:9092"
+        - name: SPRING_DATASOURCE_URL
+          value: jdbc:postgresql://postgres.zenoptics.svc.cluster.local:5432/zenopticsdb
+        - name: SPRING_DATASOURCE_USERNAME
+          value: your-username
+        - name: SPRING_DATASOURCE_PASSWORD
+          value: your-password
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingest-service
+  namespace: zenoptics
+spec:
+  type: ClusterIP
+  selector:
+    app: ingest-service
+  ports:
+  - port: 8080
+    targetPort: 8080
+---
+# Processing-Service Deployment and Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: processing-service
+  namespace: zenoptics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: processing-service
+  template:
+    metadata:
+      labels:
+        app: processing-service
+    spec:
+      containers:
+      - name: processing-service
+        image: ianunay/processor:v5
+        ports:
+        - containerPort: 5000
+        env:
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka.zenoptics.svc.cluster.local:9092"
+        - name: INFLUXDB_URL
+          value: "http://influxdb.zenoptics.svc.cluster.local:8086"
+        - name: INFLUXDB_TOKEN
+          value: "your-influxdb-token"
+        - name: INFLUXDB_ORG
+          value: "your-org"
+        - name: INFLUXDB_BUCKET
+          value: "page_view_bucket"
+        - name: JAVA_HOME
+          value: "/usr/lib/jvm/java-11-openjdk"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: processing-service
+  namespace: zenoptics
+spec:
+  selector:
+    app: processing-service
+  ports:
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000
+---
+# CronJob for consolidating data
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: consolidator-service
+  namespace: zenoptics
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: "Forbid"  # Prevents new jobs from starting if a previous job is still running
+  successfulJobsHistoryLimit: 2  # Keeps the last 2 successful jobs
+  failedJobsHistoryLimit: 2  # Keeps the last 2 failed jobs
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: consolidator-service
+        spec:
+          containers:
+          - name: consolidator-service
+            image: ianunay/consolidator:v2
+            env:
+            - name: INFLUXDB_URL
+              value: "http://influxdb.zenoptics.svc.cluster.local:8086"
+            - name: INFLUXDB_TOKEN
+              value: "your-influxdb-token"
+            - name: INFLUXDB_ORG
+              value: "your-org"
+            - name: INFLUXDB_BUCKET
+              value: "page_view_bucket"
+            - name: PG_URL
+              value: "jdbc:postgresql://postgres.zenoptics.svc.cluster.local:5432/zenopticsdb"
+            - name: PG_USER
+              value: "your-username"
+            - name: PG_PASSWORD
+              value: "your-password"
+            - name: SPARK_CLASSPATH
+              value: "/opt/spark/jars/postgresql-42.2.23.jar"
+            - name: SPARK_SUBMIT_OPTIONS
+              value: "--driver-class-path /opt/spark/jars/postgresql-42.2.23.jar --jars /opt/spark/jars/postgresql-42.2.23.jar"
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              echo "SPARK_CLASSPATH: $SPARK_CLASSPATH"
+              conda run -n consolidator python consolidator.py
+          restartPolicy: OnFailure
+---
+# Nginx
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: zenoptics
+data:
+  nginx.conf: |
+    events {}
+
+    http {
+      log_format custom '$remote_addr - $remote_user [$time_local] "$request" '
+      '$status $body_bytes_sent "$http_referer" '
+      '"$http_user_agent" "$http_x_forwarded_for" '
+      'upstream: $upstream_addr request_time: $request_time upstream_response_time: $upstream_response_time';
+
+      access_log /var/log/nginx/access.log custom;
+      error_log /var/log/nginx/error.log;
+
+      server {
+        listen 80;
+
+        location /api/ {
+
+          rewrite ^/api/(.*)$ /$1 break;
+          proxy_http_version 1.1;
+          proxy_cache_bypass $http_upgrade;
+
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection 'upgrade';
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          proxy_set_header X-Forwarded-Proto $scheme;
+
+          add_header Accept "application/json";
+
+          proxy_pass http://ingest-service:8080;
+        }
+
+        location / {
+          root /usr/share/nginx/html;
+          try_files $uri /index.html;
+        }
+
+        location ~* \.(eot|ttf|woff|woff2)$ {
+          add_header Access-Control-Allow-Origin *;
+        }
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: zenoptics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: ianunay/nginx:v11
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: zenoptics
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: nginx

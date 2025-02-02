@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zenoptics App</title>
+</head>
+<body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <!-- <script>
+      (function() {
+        var pageName = document.title; // Use the document title as the page name
+        var region = 'us-west'; // This should be dynamically set based on user location
+
+        function sendPageViewEvent() {
+          var hostname = window.location.hostname;
+          var port = window.location.port ? `:${window.location.port}` : '';
+          var protocol = window.location.protocol;
+          var apiUrl = `${protocol}//${hostname}${port}/api/page-view`;
+
+          var event = {
+            pageName: pageName,
+            region: region,
+            timestamp: new Date().toISOString()
+          };
+
+          fetch(apiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(event)
+          })
+          .then(response => {
+            if (!response.ok) {
+              throw new Error('Network response was not ok');
+            }
+            return response.json();
+          })
+          .catch(error => {
+            console.error('There was a problem with the fetch operation:', error);
+          });
+        }
+
+        window.addEventListener('load', sendPageViewEvent);
+      })();
+    </script> -->
+</body>
+</html>
