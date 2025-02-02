@@ -34,6 +34,7 @@ This README provides an overview of the Page Stats Dashboard, which is designed 
 - **Service LoadBalancer**: nginx.
 
 ## System Design
+![system-dig-page-stats.png](system-dig-page-stats.png)
 +-------------------+       +-------------------+       +-------------------+       +--------------------+
 |                   |       |                   |       |                   |       |                    |
 |   Webpage (UI)    |  POST |   Ingest-Service  |       |   Kafka Topic     |       |  Processing-Service|
