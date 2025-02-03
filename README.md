@@ -11,7 +11,7 @@ This README provides an overview of the Page Stats Dashboard, which is designed 
 - ~10 visits per user
 - 1M * 10 * 10 ~ 100 Million events per day (Kafka to capture these events)
 - Admin Dashboard to show page stats region and timestamp wise (Relationl DB like Postgres to store dashboard data for region and daily, weekly, monthly aggregations)
-- Processing of events and storage (Need an intermediary step to process and store the events in a DB like timeseries database. InfluxDB can be used here. To process huge amount of events and aggregate them as daily, weekly, monthly by computing for a date, Spark jobs can be used.)
+- Processing of events and storage (Need an intermediary step to process and store the events in a DB like timeseries database. InfluxDB can be used here. As data is stored in timeseries DB, fetching them for a time duration say 1w, 1m, etc. is faster. To process huge amount of events and aggregate them as daily, weekly, monthly by computing for a date, Spark jobs can be used.)
 
 ## Flow Overview
 
