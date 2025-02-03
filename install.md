@@ -1,3 +1,5 @@
+some debug steps and logs
+```shell
 kind create cluster --name zenoptics-cluster
 kubectl cluster-info --context kind-zenoptics-cluster
 kubectl config set-context kind-zenoptics-cluster
@@ -214,3 +216,4 @@ Final DataFrame with timestamp:
 
 # cleanup
 kind delete cluster --name zenoptics-cluster
+```
