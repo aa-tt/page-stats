@@ -43,3 +43,4 @@ This README provides an overview of the Page Stats Dashboard, which is designed 
 - **StatefulSet Apps**: Kafka, Zookeeper.
 - **CronJob Batch**: consolidator-service.
 - **Service LoadBalancer**: nginx.
+![kubernetes.png](kubernetes.png)

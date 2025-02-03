@@ -1,0 +1,1 @@
+![consolidator-service.png](consolidator-service.png)
