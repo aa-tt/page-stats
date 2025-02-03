@@ -2,6 +2,17 @@
 
 This README provides an overview of the Page Stats Dashboard, which is designed to create a dashboard for page visit statistics for an admin.
 
+## System Design
+![system-dig-page-stats.png](system-dig-page-stats.png)
+
+### Design Considerations
+- ~Million Users
+- ~10 pages website
+- ~10 visits per user
+- 1M * 10 * 10 ~ 100 Million events per day (Kafka to capture these events)
+- Admin Dashboard to show page stats region and timestamp wise (Relationl DB like Postgres to store dashboard data for region and daily, weekly, monthly aggregations)
+- Processing of events and storage (Need an intermediary step to process and store the events in a DB like timeseries database. InfluxDB can be used here. To process huge amount of events and aggregate them as daily, weekly, monthly by computing for a date, Spark jobs can be used.)
+
 ## Flow Overview
 
 ### UI Step [ui](ui)
@@ -32,24 +43,3 @@ This README provides an overview of the Page Stats Dashboard, which is designed 
 - **StatefulSet Apps**: Kafka, Zookeeper.
 - **CronJob Batch**: consolidator-service.
 - **Service LoadBalancer**: nginx.
-
-## System Design
-![system-dig-page-stats.png](system-dig-page-stats.png)
-+-------------------+       +-------------------+       +-------------------+       +--------------------+
-|                   |       |                   |       |                   |       |                    |
-|   Webpage (UI)    |  POST |   Ingest-Service  |       |   Kafka Topic     |       |  Processing-Service|
-|   (Tracker.js)    +------->   (/page-view)    +------->   (page_views)    +------->   (Consumes Kafka) |
-|   (Dashboard.js)  |       |                   |       |                   |       |                    |
-+--------+----------+       +-------------------+       +-------------------+       +---------+----------+
-         |                                                                                    |
-    GET  |                                                                                    |
-         |                                                                                    |
-         |                                                                                    |
-+--------v----------+       +-------------------+       +---------------------+       +---------v-----------+
-|                   |       |                   |       |                     |       |                     |
-|   Ingest-Service  |       |   PostgreSQL      |       |   Consolidator      |       |       InfluxDB      |
-| (/aggregated-data)+------>+   (region_daily,  +------->      Service        +<------+   (page_view_bucket)|
-|                   |       |   region_weekly,  |       |  (Spark cron job)   |       |                     |
-+-------------------+       |   region_monthly) |       +---------------------+       +---------------------+
-                            +-------------------+                            
-                                                        
