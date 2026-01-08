@@ -44,3 +44,6 @@ This README provides an overview of the Page Stats Dashboard, which is designed 
 - **CronJob Batch**: consolidator-service.
 - **Service LoadBalancer**: nginx.
 ![kubernetes.png](kubernetes.png)
+
+### Looking for a cloud managed services instead of self-managed kubernetes services (like Dataproc serverless, in place of self managed Spark cluster in kubernetes, pub/sub in place of self managed Kafka and zookeeper, Cloud Run in place of managing nginx, etc), jump to similar solution using GCP:
+https://github.com/aa-tt/gcp-data-pipeline, follow its Readme and Demo section.
